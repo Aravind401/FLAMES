@@ -1,11 +1,33 @@
 ﻿
-Console.WriteLine("Welcome to the Flames game!");
-Console.Write("Enter your name: ");
-string yourName = Console.ReadLine();
-Console.Write("Enter your partner's name: ");
-string partnerName = Console.ReadLine();
-string flamesResult = CalculateFlames(yourName, partnerName);
-Console.WriteLine("Your Flames result is: " + flamesResult);
+using System.Text;
+var str = new StringBuilder();
+
+var date = DateTime.Now;
+str.Append(date.Month.ToString("00")); str.Append(date.Day.ToString("00")); str.Append(date.Year);
+Console.WriteLine(DateTime.Now);
+Console.Write("Enter the pin: ");
+
+
+string pin = Console.ReadLine();
+
+
+
+
+
+
+
+
+if (pin != "" && pin == str.ToString())
+{
+
+    Console.WriteLine("Welcome to the Flames game!");
+    Console.Write("Enter your name: ");
+    string yourName = Console.ReadLine();
+    Console.Write("Enter your partner's name: ");
+    string partnerName = Console.ReadLine();
+    string flamesResult = CalculateFlames(yourName, partnerName);
+    Console.WriteLine("Your Flames result is: " + flamesResult);
+}
 static string CalculateFlames(string yourName, string partnerName)
 {
     string flames = "FLAMES";
@@ -24,6 +46,7 @@ static string CalculateFlames(string yourName, string partnerName)
             }
         }
     }
+
     int index = 0;
     for (int i = 1; i <= 5; i++)
     {
