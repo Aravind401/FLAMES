@@ -1,0 +1,39 @@
+﻿
+Console.WriteLine("Welcome to the Flames game!");
+Console.Write("Enter your name: ");
+string yourName = Console.ReadLine();
+Console.Write("Enter your partner's name: ");
+string partnerName = Console.ReadLine();
+string flamesResult = CalculateFlames(yourName, partnerName);
+Console.WriteLine("Your Flames result is: " + flamesResult);
+static string CalculateFlames(string yourName, string partnerName)
+{
+    string flames = "FLAMES";
+    int count = yourName.Length + partnerName.Length;
+    for (int i = 0; i < yourName.Length; i++)
+    {
+        for (int j = 0; j < partnerName.Length; j++)
+        {
+            if (yourName[i] == partnerName[j])
+            {
+                count -= 2;
+                yourName = yourName.Remove(i, 1);
+                partnerName = partnerName.Remove(j, 1);
+                i--;
+                break;
+            }
+        }
+    }
+    int index = 0;
+    for (int i = 1; i <= 5; i++)
+    {
+        index = (index + count) % flames.Length;
+        if (index == 0)
+        {
+            index = flames.Length;
+        }
+        flames = flames.Remove(index - 1, 1);
+    }
+    return flames;
+}
+
