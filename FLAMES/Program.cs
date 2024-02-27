@@ -1,96 +1,166 @@
-﻿
+using System;
+using System.Security.Cryptography;
 using System.Text;
 
-Thread.Sleep(1000);
-Console.Write(DateTime.Now);
-Console.Write("\nEnter the pin: ");
-var date = DateTime.Now;
-var str = new StringBuilder();
-str.Append(date.Month.ToString("00")); str.Append(date.Day.ToString("00")); str.Append(date.Year);
-
-string pin = Console.ReadLine();
-
-if (pin != "" && pin == str.ToString())
+// A helper class for TR-34 message creation
+public class TR34Message
 {
-start:;
-    Console.Clear();
-    Console.WriteLine("Welcome to the Flames game!");
-    Thread.Sleep(1000);
-    Console.Write("Enter your name: ");
-    Thread.Sleep(1000);
-    string yourName = Console.ReadLine();
-    Thread.Sleep(1000);
-    Console.Write("Enter your partner's name: ");
-    Thread.Sleep(1000);
-    string partnerName = Console.ReadLine();
-    if (yourName.Length == 0 || partnerName.Length == 0) return;
-    if (yourName.Contains("vijay") || partnerName.Contains("vijay")) { Console.Write("SISTER"); return; }
-    string flamesResult = CalculateFlames(yourName, partnerName);
+    // The KDH public key in XML format
+    private static string KDH_PUBLIC_KEY = "<RSAKeyValue><Modulus>...</Modulus><Exponent>...</Exponent></RSAKeyValue>";
 
-    var result = string.Empty;
-    switch (flamesResult)
+    // The TMK to be injected
+    private static byte[] TMK = new byte[] { ... };
+
+    // The key block header attributes
+    private static string KEY_USAGE = "B0"; // PIN encryption key
+    private static string KEY_VERSION = "01"; // version 1
+    private static string KEY_DERIVATION = "0"; // no derivation
+    private static string KEY_FORMAT = "0"; // clear key
+    private static string KEY_ALGORITHM = "A"; // AES
+    private static string KEY_LENGTH = "20"; // 256 bits
+    private static string KEY_BLOCK_VERSION = "A"; // version A
+
+    // The AES block size in bytes
+    private static int AES_BLOCK_SIZE = 16;
+
+    // The HMAC output size in bytes
+    private static int HMAC_SIZE = 32;
+
+    // A random number generator
+    private static RandomNumberGenerator rng = RandomNumberGenerator.Create();
+
+    // A method to generate a random session key of the given size
+    private static byte[] GenerateSessionKey(int size)
     {
-
-        case "F": result = "FRIEND"; break;
-        case "L": result = "LOVER"; break;
-        case "A": result = "AFFECTION"; break;
-        case "M": result = "MARRIAGE"; break;
-        case "E": result = "ENEMY"; break;
-        case "S": result = "SISTER"; break;
-
+        byte[] key = new byte[size];
+        rng.GetBytes(key);
+        return key;
     }
-    Thread.Sleep(2000);
-    Console.Write("Processing");
-    for (int i = 0; i < 3; i++)
-    {
-        Console.Write(".");
-        Thread.Sleep(1000);
-    }
-    Console.WriteLine();
-    Console.WriteLine("++++++++++++++++++++++++++++++++");
-      
-    Console.WriteLine("+ Your Flames result is: " + result+" +");
-    Console.WriteLine("++++++++++++++++++++++++++++++++");
-    Console.WriteLine();
-    Console.WriteLine("Do you want to continue y/n");
-    var r = Console.ReadLine();
 
-    if (r.ToUpper() == "Y")
-        goto start;
-    else
-        return;
-}
-static string CalculateFlames(string yourName, string partnerName)
-{
-    string flames = "FLAMES";
-    int count = yourName.Length + partnerName.Length;
-    for (int i = 0; i < yourName.Length; i++)
+    // A method to encrypt a session key with the KDH public key using RSA-OAEP
+    private static byte[] EncryptSessionKey(byte[] key)
     {
-        for (int j = 0; j < partnerName.Length; j++)
+        using (RSACryptoServiceProvider rsa = new RSACryptoServiceProvider())
         {
-            if (yourName[i] == partnerName[j])
+            rsa.FromXmlString(KDH_PUBLIC_KEY);
+            return rsa.Encrypt(key, true);
+        }
+    }
+
+    // A method to generate a key block that contains the TMK and other information
+    private static byte[] GenerateKeyBlock()
+    {
+        // The key block header
+        string header = KEY_BLOCK_VERSION + KEY_USAGE + KEY_VERSION + KEY_DERIVATION + KEY_FORMAT + KEY_ALGORITHM + KEY_LENGTH;
+
+        // The key block length (header + TMK + padding)
+        int length = header.Length + TMK.Length;
+        // Add padding if needed to make the length a multiple of AES block size
+        int padding = (AES_BLOCK_SIZE - (length % AES_BLOCK_SIZE)) % AES_BLOCK_SIZE;
+        length += padding;
+
+        // The key block data
+        byte[] data = new byte[length];
+        // Copy the header bytes
+        Encoding.ASCII.GetBytes(header, 0, header.Length, data, 0);
+        // Copy the TMK bytes
+        Buffer.BlockCopy(TMK, 0, data, header.Length, TMK.Length);
+        // Generate random padding bytes if needed
+        if (padding > 0)
+        {
+            byte[] pad = new byte[padding];
+            rng.GetBytes(pad);
+            Buffer.BlockCopy(pad, 0, data, header.Length + TMK.Length, padding);
+        }
+
+        return data;
+    }
+
+    // A method to encrypt a key block with a session key using AES-256-CBC
+    private static byte[] EncryptKeyBlock(byte[] keyBlock, byte[] sessionKey)
+    {
+        using (AesCryptoServiceProvider aes = new AesCryptoServiceProvider())
+        {
+            aes.KeySize = 256; // 256 bits
+            aes.BlockSize = 128; // 16 bytes
+            aes.Mode = CipherMode.CBC; // CBC mode
+            aes.Padding = PaddingMode.None; // No padding
+            aes.Key = sessionKey; // Set the session key
+            // Generate a random initialization vector (IV)
+            aes.GenerateIV();
+            byte[] iv = aes.IV;
+            // Create an encryptor
+            ICryptoTransform encryptor = aes.CreateEncryptor();
+            // Encrypt the key block
+            byte[] encrypted = encryptor.TransformFinalBlock(keyBlock, 0, keyBlock.Length);
+            // Concatenate the IV and the encrypted key block
+            byte[] result = new byte[iv.Length + encrypted.Length];
+            Buffer.BlockCopy(iv, 0, result, 0, iv.Length);
+            Buffer.BlockCopy(encrypted, 0, result, iv.Length, encrypted.Length);
+            return result;
+        }
+    }
+
+    // A method to generate a MAC for an encrypted key block using HMAC-SHA-256 and a session key
+    private static byte[] GenerateMAC(byte[] encryptedKeyBlock, byte[] sessionKey)
+    {
+        using (HMACSHA256 hmac = new HMACSHA256(sessionKey))
+        {
+            return hmac.ComputeHash(encryptedKeyBlock);
+        }
+    }
+
+    // A method to construct the TR-34 message by concatenating the encrypted session key, the encrypted key block, and the MAC
+    private static byte[] ConstructMessage(byte[] encryptedSessionKey, byte[] encryptedKeyBlock, byte[] mac)
+    {
+        byte[] message = new byte[encryptedSessionKey.Length + encryptedKeyBlock.Length + mac.Length];
+        Buffer.BlockCopy(encryptedSessionKey, 0, message, 0, encryptedSessionKey.Length);
+        Buffer.BlockCopy(encryptedKeyBlock, 0, message, encryptedSessionKey.Length, encryptedKeyBlock.Length);
+        Buffer.BlockCopy(mac, 0, message, encryptedSessionKey.Length + encryptedKeyBlock.Length, mac.Length);
+        return message;
+    }
+
+    // A method to encode the TR-34 message in base64 or PEM format
+    private static string EncodeMessage(byte[] message, bool pem)
+    {
+        // Convert the message to base64
+        string base64 = Convert.ToBase64String(message);
+        if (pem)
+        {
+            // Add line breaks every 64 characters
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < base64.Length; i += 64)
             {
-                count -= 2;
-                yourName = yourName.Remove(i, 1);
-                partnerName = partnerName.Remove(j, 1);
-                i--;
-                break;
+                sb.AppendLine(base64.Substring(i, Math.Min(64, base64.Length - i)));
             }
+            // Add PEM header and footer
+            sb.Insert(0, "-----BEGIN TR34 MESSAGE-----\n");
+            sb.Append("-----END TR34 MESSAGE-----\n");
+            return sb.ToString();
         }
-    }
-
-
-
-    int index = 0;
-    for (int i = 1; i <= 5; i++)
-    {
-        index = (index + count) % flames.Length;
-        if (index == 0)
+        else
         {
-            index = flames.Length;
+            // Return the base64 string as is
+            return base64;
         }
-        flames = flames.Remove(index - 1, 1);
     }
-    return flames;
-}
 
+    // A method to create a TR-34 message using C#
+    public static string CreateTR34Message(bool pem)
+    {
+        // Generate a random session key of 32 bytes (256 bits)
+        byte[] sessionKey = GenerateSessionKey(32);
+        // Encrypt the session key with the KDH public key
+        byte[] encryptedSessionKey = EncryptSessionKey(sessionKey);
+        // Generate a key block that contains the TMK and other information
+        byte[] keyBlock = GenerateKeyBlock();
+        // Encrypt the key block with the session key
+        byte[] encryptedKeyBlock = EncryptKeyBlock(keyBlock, sessionKey);
+        // Generate a MAC for the encrypted key block
+        byte[] mac = GenerateMAC(encryptedKeyBlock, sessionKey);
+        // Construct the TR-34 message
+        byte[] message = ConstructMessage(encryptedSessionKey, encryptedKeyBlock, mac);
+        // Encode the message in base64 or PEM format
+        return EncodeMessage(message, pem);
+    }
+}
